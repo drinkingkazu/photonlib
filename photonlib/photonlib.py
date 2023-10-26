@@ -6,7 +6,7 @@ from .meta import VoxelMeta
 
 class PhotonLib:
     def __init__(
-        self, meta, vis, eff=1, 
+        self, meta: VoxelMeta, vis:torch.Tensor, eff:float = 1., 
     ):
         self._meta = meta
         self._eff = eff
@@ -18,7 +18,12 @@ class PhotonLib:
         #    self.pmt_pos_norm = meta.norm_coord(pmt_pos)
     
     @classmethod
-    def load(cls, filepath, **kwargs):
+    def load(cls, filepath:str):
+
+        if isinstance(filepath,dict):
+            filepath=filepath['photonlib']['filepath']
+        elif not isinstance(filepath,str):
+            raise ValueError(f'The argument of load function must be str or dict (received{filepath} {type(filepath)})')
 
         meta = VoxelMeta.load(filepath)
         
