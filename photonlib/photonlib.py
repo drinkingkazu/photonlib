@@ -5,25 +5,42 @@ from scipy.ndimage import sobel
 from .meta import VoxelMeta
 
 class PhotonLib:
-    def __init__(
-        self, meta: VoxelMeta, vis:torch.Tensor, eff:float = 1., 
-    ):
+    def __init__(self, meta: VoxelMeta, vis:torch.Tensor, eff:float = 1.):
+        '''
+        Constructor
+
+        Parameters
+        ----------
+        meta : VoxelMeta
+            Defines the volume and its voxelization scheme for a photon library
+        vis  : torch.Tensor
+            Visibility map as 1D array indexed by the voxel IDs
+        eff  : float
+            Overall scaling factor for the visibility. Does not do anything if 1.0
+        '''
         self._meta = meta
         self._eff = eff
         self.grad_cache = None
         self._vis = vis
-
-        #if pmt_pos is not None:
-        #    self.pmt_pos = pmt_pos
-        #    self.pmt_pos_norm = meta.norm_coord(pmt_pos)
     
     @classmethod
-    def load(cls, filepath:str):
+    def load(cls, cfg_or_fname:str):
+        '''
+        Constructor method that can take either a config dictionary or the data file path
 
-        if isinstance(filepath,dict):
-            filepath=filepath['photonlib']['filepath']
-        elif not isinstance(filepath,str):
-            raise ValueError(f'The argument of load function must be str or dict (received{filepath} {type(filepath)})')
+        Parameters
+        ----------
+        cfg_or_fname : str
+            If string type, it is interpreted as a path to a photon library data file.
+            If dictionary type, it is interpreted as a configuration.
+        '''
+
+        if isinstance(cfg_or_fname,dict):
+            filepath=cfg_or_fname['photonlib']['filepath']
+        elif isinstance(cfg_or_fname,str):
+            filepath=cfg_or_fname
+        else:
+            raise ValueError(f'The argument of load function must be str or dict (received{cfg_or_fname} {type(filepath)})')
 
         meta = VoxelMeta.load(filepath)
         
@@ -44,24 +61,24 @@ class PhotonLib:
 
     @property
     def meta(self):
-        '''
-        Access photonlib.meta.AABox that stores the volume definition (xyz range) for this model.
-        Try print(meta.ranges).
-        Return:
-            meta (photonlib.meta.AABox instance)
-        '''
         return self._meta
 
 
     def visibility(self, x):
         '''
         A function meant for analysis/inference (not for training) that returns
-            the visibilities for all PMTs given the position(s) in x. Note x is not 
-            a normalized coordinate.
-        Input:
-            x (torch.Tensor): A (or an array of) 3D point in the absolute coordinate
-        Return:
-            A torch.Tensor instance holding the visibilities in linear scale for the position(s) x.
+        the visibilities for all PMTs given the position(s) in x. Note x is not 
+        a normalized coordinate.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            A (or an array of) 3D point in the absolute coordinate
+        
+        Returns
+        -------
+        torch.Tensor
+            An instance holding the visibilities in linear scale for the position(s) x.
         '''
 
         vox_ids = self.meta.coord_to_voxel(x)

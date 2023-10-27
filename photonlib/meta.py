@@ -12,10 +12,13 @@ class AABox:
     def __init__(self, ranges):
         '''
         Constructor
-        Input:
-            ranges (array-like): shape (2,N) holding two N-dimentional points.
-                The first point [0,:] is the minimum point of the bounding box.
-                The second point [1,:] is the maximum point of the bounding box.
+        
+        Parameters
+        ----------
+        ranges : array-like
+            shape (2,N) holding two N-dimentional points.
+            The first point [0,:] is the minimum point of the bounding box.
+            The second point [1,:] is the maximum point of the bounding box.
         '''
         self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
         self._lengths = torch.diff(self._ranges).flatten()
@@ -38,11 +41,16 @@ class AABox:
     def norm_coord(self, pos):
         '''
         Transform the absolute position to the normalized (-1 to 1 along each axis) within the box
-        Input:
-            pos (array-like): a (or an array of) position(s) in the absolute coordinate.
-        Return:
-            torch.Tensor instance holding the positions in the normalized coordinate using the box
-                definition (the range along each axis -1 to 1).
+        Parameters
+        ----------
+        pos : (array-like)
+            a (or an array of) position(s) in the absolute coordinate.
+
+        Returns
+        -------
+        torch.Tensor 
+            instance holding the positions in the normalized coordinate using the box
+            definition (the range along each axis -1 to 1).
         '''
         pos = torch.as_tensor(pos)
 
@@ -95,9 +103,13 @@ class VoxelMeta(AABox):
     def __init__(self, shape, ranges):
         '''
         Constructor
-        Input:
-            shape  (array-like): N-dim array specifying the voxel count along each axis.
-            ranges (array-like): (2,N) array given to the AABox constructor (see description).
+
+        Parameters
+        ----------
+        shape  : array-like
+            N-dim array specifying the voxel count along each axis.
+        ranges : array-like
+            (2,N) array given to the AABox constructor (see description).
         '''
         super().__init__(ranges)
         self._shape = torch.as_tensor(shape, dtype=torch.int64)
@@ -144,6 +156,16 @@ class VoxelMeta(AABox):
     def idx_to_voxel(self, idx):
         '''
         Converts from the index coordinate (N) to the voxel ID (1)
+
+        Parameters
+        ----------
+        idx : array-like (2D or 3D)
+            An array of positions in terms of voxel index along xyz axis
+
+        Returns
+        -------
+        torch.Tensor
+            A 1D array of voxel IDs corresponding to the input axis index(es)
         '''
 
         idx = torch.as_tensor(idx)
@@ -159,6 +181,17 @@ class VoxelMeta(AABox):
     def voxel_to_idx(self, voxel):
         '''
         Converts from the voxel ID (1) to the index coordinate (N)
+
+        Parameters
+        ----------
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
+
+        Returns
+        -------
+        torch.Tensor
+            A list of index IDs. Shape (3) if the input is a single point. Otherwise (-1,3).
+
         '''
         voxel = torch.as_tensor(voxel)
         nx, ny = self.shape[:2]
@@ -175,6 +208,16 @@ class VoxelMeta(AABox):
     def idx_to_coord(self, idx):
         '''
         Converts from the index coordinate (N) to the absolute coordinate (N)
+
+        Parameters
+        ----------
+        idx : array-like (1D or 2D)
+            An array of positions in terms of voxel index along xyz axis
+
+        Returns
+        -------
+        torch.Tensor
+            An array of corresponding positions in the absolute coordinate (at each voxel center)
         '''
         idx = torch.as_tensor(idx)
 
@@ -188,6 +231,16 @@ class VoxelMeta(AABox):
     def voxel_to_coord(self, voxel):
         '''
         Converts from the voxel ID (1) to the absolute coordinate (N)
+
+        Parameters
+        ----------
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
+
+        Returns
+        -------
+        torch.Tensor
+            An array of corresponding positions in the absolute coordinate (at each voxel center)
         '''
         idx = self.voxel_to_idx(voxel)
         return self.idx_to_coord(idx)
@@ -196,6 +249,16 @@ class VoxelMeta(AABox):
     def coord_to_idx(self, coord):
         '''
         Converts from the absolute coordinate (N) to the index coordinate (N)
+
+        Parameters
+        ----------
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
+
+        Returns
+        torch.Tensor
+            An array of corresponding voxels represented as index along xyz axis
+        -------
         '''
         # TODO(2021-10-29 kvt) validate coord_to_idx
         # TODO(2021-10-29 kvt) check ranges
@@ -218,6 +281,15 @@ class VoxelMeta(AABox):
     def coord_to_voxel(self, coord):
         '''
         Converts from the absolute coordinate (N) to the voxel ID (1)
+
+        Parameters
+        ----------
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
+
+        Returns
+        torch.Tensor
+            An array of corresponding voxels represented as integer voxel ID
         '''
         idx = self.coord_to_idx(coord)
         vox = self.idx_to_voxel(idx)
@@ -233,6 +305,12 @@ class VoxelMeta(AABox):
     def load(cls, cfg_or_fname):
         '''
         A factory method to construct an instance using a photon library file
+
+        Parameters
+        ----------
+
+        Returns
+        -------
         '''
 
         if isinstance(cfg_or_fname,dict):
@@ -305,33 +383,3 @@ class VoxelMeta(AABox):
         return idx
 
 
-'''
-    def self_check(self, n=1000):
-        prev_lib = self.lib
-
-        meta = self
-        self.lib = np
-        bins = [np.linspace(meta.ranges[i,0], meta.ranges[i,1], meta.shape[i]+1) 
-               for i in range(3)]
-        
-        for __ in tqdm(range(n)):
-            pos = np.random.uniform(meta.ranges[:,0], meta.ranges[:,1])
-            idx = np.array([np.digitize(pos[i], bins[i]) - 1 for i in range(3)])
-            vox = meta.idx_to_voxel(idx)
-
-            if not np.allclose(idx, meta.voxel_to_idx(vox)):
-                raise RunTimeError('voxel_to_idx', pos)
-
-            coord = meta.voxel_to_coord(vox)
-            if not np.all(np.abs(coord - pos) < meta.voxel_size):
-                raise RunTimeError('voxel_to_coord', pos)
-
-            vox = np.random.randint(low=0, high=len(meta))
-            idx = meta.voxel_to_idx(vox)
-            pos = meta.voxel_to_coord(pos)
-
-            if not np.allclose(vox, meta.idx_to_voxel(idx)):
-                raise RunTimeError('idx_to_voxel', vox)
-
-        self.lib = prev_lib
-'''
