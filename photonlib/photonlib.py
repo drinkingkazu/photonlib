@@ -101,7 +101,7 @@ class PhotonLib:
         return self._vis
 
     def view(self, arr):
-        shape = list(self.meta.shape[::-1]) + [-1]
+        shape = list(self.meta.shape.numpy()[::-1]) + [-1]
         return torch.swapaxes(arr.reshape(shape), 0, 2)
 
     @property
