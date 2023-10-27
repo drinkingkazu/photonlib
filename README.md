@@ -1,7 +1,7 @@
 [![Documentation Status](https://readthedocs.org/projects/photonlib/badge/?version=latest)](https://photonlib.readthedocs.io/en/latest/?badge=latest)
 
 # Photon Library
-This is a python API to use Photon Library
+This is a python API to use Photon Library. This README describes how to install and where to find tutorials. For users, you might find a complimentary documentation at the [ReadTheDocs](https://photonlib.readthedocs.io/en/latest/). For developers, make sure you read the [Contribution Guide](/contributing.md).
 
 ## Installation
 Once `git clone` this repository, go inside and:
