@@ -1,3 +1,5 @@
+[![Documentation Status](https://readthedocs.org/projects/photonlib/badge/?version=latest)](https://photonlib.readthedocs.io/en/latest/?badge=latest)
+
 # Photon Library
 This is a python API to use Photon Library
 
