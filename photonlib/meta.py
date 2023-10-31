@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import h5py
 import torch
 import numpy as np
@@ -23,6 +25,27 @@ class AABox:
         self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
         self._lengths = torch.diff(self._ranges).flatten()
     
+
+    def __repr__(self):
+        s = 'Meta'
+        for i,var in enumerate('xyz'):
+            x0, x1 = self.ranges[i]
+            s += f' {var}:({x0},{x1})'
+        return s
+
+    @property
+    def x(self):
+        return self._ranges[0]
+    
+    @property
+    def y(self):
+        return self._ranges[1]
+
+    @property
+    def z(self):
+        return self._ranges[2]    
+    
+
     @property
     def ranges(self):
         '''
@@ -35,7 +58,7 @@ class AABox:
         '''
         Access the lengths of the box along each axis
         '''
-        return self._lengths
+        return self._lengths            
 
 
     def norm_coord(self, pos):
@@ -124,7 +147,7 @@ class VoxelMeta(AABox):
         return s
 
     def __len__(self):
-        return torch.product(self.shape)
+        return torch.prod(self.shape)
 
     @property
     def shape(self):
@@ -330,6 +353,87 @@ class VoxelMeta(AABox):
         return cls(shape, ranges)
 
 
+    def idx_at(self, axis : int | str, i : int):
+        '''
+        Slice the volume at the i-th voxel along the specified axis.
+
+        Parameters
+        ----------
+        axis : int or str
+            The axis to slice, str (x, y, or z) or int (0, 1, or 2).
+        i : int
+            The index along the axis to slice.
+
+        Returns
+        -------
+        torch.Tensor
+            An array of 3D axis index that represents the sliced plane. Shape (N,3) where
+            N is the product of voxel count along the sliced plane. For instance, if the
+            input argument axis is 0 or 'x', N = ny * nz where ny and nz are the number of
+            voxels along the y and z axis.
+        '''
+        axis, axis_others = self.select_axis(axis)
+        axis_a, axis_b = axis_others
+
+        grid = [None] * 3
+        grid[axis] = i
+        grid[axis_a] = torch.arange(self.shape[axis_a])
+        grid[axis_b] = torch.arange(self.shape[axis_b])
+
+        idx = np.column_stack([g.flatten() for g in np.meshgrid(*grid)])
+        return idx
+
+
+    def coord_at(self, axis : int | str, i : int):
+        '''
+        Slice the volume at the i-th voxel along the specified axis.
+
+        Parameters
+        ----------
+        axis : int or str
+            The axis to slice, str (x, y, or z) or int (0, 1, or 2).
+        i : int
+            The index along the axis to slice.
+
+        Returns
+        -------
+        torch.Tensor
+            An array of 3D coordinate positions that represent the sliced plane. Shape (N,3).
+            See idx_at explanation. This function converts the axis index to 3D position.
+        '''
+
+        return self.idx_to_coord(self.idx_at(axis,i))
+
+
+
+    def slice_shape(self, axis: int | str):
+        '''
+        Return the shape of a sliced tensor along the specified axis.
+        Use this to create a 2D slice of a visibility map for positions obtained through
+        idx_at and coord_at functions.
+
+        Arguments
+        ---------
+        axis : str | int
+            The axis along which a slice is obtained. [0,1,2] or ['x','y','z']
+
+        Returns
+        -------
+            A tuple of the tensor shape
+        '''
+
+        assert axis in ['x','y','z',0,1,2], f'invalid axis {axis}'
+
+        if axis in [0,'x']:
+            return (self.shape[1].item(),self.shape[2].item())
+
+        elif axis in [1,'y']:
+            return (self.shape[0].item(),self.shape[2].item())
+
+        else:
+            return (self.shape[1].item(),self.shape[0].item())
+
+    
     @staticmethod
     def select_axis(axis):
         axis_to_num = dict(x=0, y=1, z=2)
@@ -344,18 +448,7 @@ class VoxelMeta(AABox):
 
         return axis, axis_others
 
-    def idx_at(self, axis, i):
-        axis, axis_others = self.select_axis(axis)
-        axis_a, axis_b = axis_others
 
-        grid = [None] * 3
-        grid[axis] = i
-        grid[axis_a] = torch.arange(self.shape[axis_a])
-        grid[axis_b] = torch.arange(self.shape[axis_b])
-
-        idx = torch.column_stack([g.flatten() for g in torch.meshgrid(*grid)])
-        return idx
-    
     def check_valid_idx(self, idx, return_components=False):
         idx = torch.as_tensor(idx)
         shape = torch.as_tensor(self.shape,device=idx.device)

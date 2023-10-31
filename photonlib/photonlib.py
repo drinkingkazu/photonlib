@@ -56,7 +56,7 @@ class PhotonLib:
 
         plib = cls(meta, vis, eff)
 
-        return plib
+        return plib  
 
 
     @property
