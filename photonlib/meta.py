@@ -18,11 +18,14 @@ class AABox:
         Parameters
         ----------
         ranges : array-like
-            shape (2,N) holding two N-dimentional points.
-            The first point [0,:] is the minimum point of the bounding box.
-            The second point [1,:] is the maximum point of the bounding box.
+            shape (N,2) holding two N-dimentional points.
+            The first point [:,0] is the minimum point of the bounding box.
+            The second point [:,1] is the maximum point of the bounding box.
         '''
         self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
+        if len(self._ranges.shape) != 2 or self._ranges.shape[1] != 2:
+            raise ValueError('ranges must be a 2D array with shape (2,N)')
+
         self._lengths = torch.diff(self._ranges).flatten()
     
 
@@ -132,10 +135,13 @@ class VoxelMeta(AABox):
         shape  : array-like
             N-dim array specifying the voxel count along each axis.
         ranges : array-like
-            (2,N) array given to the AABox constructor (see description).
+            (N, 2) array given to the AABox constructor (see description).
         '''
         super().__init__(ranges)
+        
         self._shape = torch.as_tensor(shape, dtype=torch.int64)
+        if self._shape.shape != (self.ranges.shape[0],):
+            raise ValueError('shape must be a 1D array with length equal to number of axes')
         self._voxel_size = torch.diff(self.ranges).flatten() / self.shape
        
     def __repr__(self):
@@ -173,6 +179,7 @@ class VoxelMeta(AABox):
     
     @property
     def norm_step_size(self):
+        # !TODO: (2023-11-05 sy) what is this?
         return 2. / self.shape
 
 
@@ -422,7 +429,8 @@ class VoxelMeta(AABox):
             A tuple of the tensor shape
         '''
 
-        assert axis in ['x','y','z',0,1,2], f'invalid axis {axis}'
+        if axis not in ['x','y','z',0,1,2]:
+            raise IndexError(f'unknown axis {axis}')
 
         if axis in [0,'x']:
             return (self.shape[1].item(),self.shape[2].item())
