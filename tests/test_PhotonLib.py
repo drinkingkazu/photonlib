@@ -114,6 +114,7 @@ def test_PhotonLib_call(plib, plib_with_eff, torch_rng, num_pmt, ranges):
             assert plib(x).shape == (*x.shape[:-1], num_pmt)
             assert np.allclose(plib(x), plib.visibility(x)*plib.eff), 'PhotonLib.__call__ does not return the correct visibility'
             
+"""
 def test_PhotonLib_gradient_on_fly(plib, torch_rng, num_pmt, shapes):
     num_vox = np.prod(shapes)
     rand_idx = torch.randint(low=0, high=num_vox, size=(1,), generator=torch_rng).item()
@@ -171,3 +172,4 @@ def test_PhotonLib_grad_view(plib, torch_rng, shapes, num_pmt):
 
     for axis in range(3):
         plib.grad_view(axis)
+"""

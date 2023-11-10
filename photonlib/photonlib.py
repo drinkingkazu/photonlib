@@ -122,6 +122,32 @@ class PhotonLib:
     def __call__(self, coords):
         return self.visibility(coords) * self.eff
 
+    @staticmethod
+    def save(outpath, vis, meta, eff=None):
+
+        if isinstance(vis, torch.Tensor):
+            vis = vis.cpu().detach().numpy()
+        else:
+            vis = np.asarray(vis)
+
+        if vis.ndim == 4:
+            vis = np.swapaxes(vis, 0, 2).reshape(len(meta), -1)
+
+        # TODO check dim(vis) and dim(meta)
+
+        print('[PhotonLib] saving to', outpath)
+        with h5py.File(outpath, 'w') as f:
+            f.create_dataset('numvox', data=meta.shape.cpu().detach().numpy())
+            f.create_dataset('min', data=meta.ranges[:,0].cpu().detach().numpy())
+            f.create_dataset('max', data=meta.ranges[:,1].cpu().detach().numpy())
+            f.create_dataset('vis', data=vis, compression='gzip')
+
+            if eff is not None:
+                f.create_dataset('eff', data=eff)
+
+        print('[PhotonLib] file saved')
+
+"""
     def _gradient_on_fly(self, voxel_id):
         if torch.as_tensor(voxel_id).dim() != 0:
             raise ValueError('voxel_id must be a scalar')
@@ -176,28 +202,5 @@ class PhotonLib:
 
         d_axis = self.meta.select_axis(d_axis)[0]
         return self.view(self.grad_cache[:,d_axis])
+"""
 
-    @staticmethod
-    def save(outpath, vis, meta, eff=None):
-
-        if isinstance(vis, torch.Tensor):
-            vis = vis.cpu().detach().numpy()
-        else:
-            vis = np.asarray(vis)
-
-        if vis.ndim == 4:
-            vis = np.swapaxes(vis, 0, 2).reshape(len(meta), -1)
-
-        # TODO check dim(vis) and dim(meta)
-
-        print('[PhotonLib] saving to', outpath)
-        with h5py.File(outpath, 'w') as f:
-            f.create_dataset('numvox', data=meta.shape.cpu().detach().numpy())
-            f.create_dataset('min', data=meta.ranges[:,0].cpu().detach().numpy())
-            f.create_dataset('max', data=meta.ranges[:,1].cpu().detach().numpy())
-            f.create_dataset('vis', data=vis, compression='gzip')
-
-            if eff is not None:
-                f.create_dataset('eff', data=eff)
-
-        print('[PhotonLib] file saved')
