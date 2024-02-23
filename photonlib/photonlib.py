@@ -19,9 +19,9 @@ class PhotonLib:
             Overall scaling factor for the visibility. Does not do anything if 1.0
         '''
         self._meta = meta
-        self._eff = eff
+        self._eff = torch.as_tensor(eff)
+        self._vis = torch.as_tensor(vis)
         self.grad_cache = None
-        self._vis = vis
     
     @classmethod
     def load(cls, cfg_or_fname:str):
@@ -58,11 +58,35 @@ class PhotonLib:
 
         return plib  
 
-
     @property
     def meta(self):
         return self._meta
 
+    @property
+    def device(self):
+        return self._vis.device
+
+    def to(self, device=None):
+        '''
+        Perform device conversion on the PhotonLib.
+
+        Arguments
+        ---------
+        device: :class:`torch.memory_format`, optinal
+            The desired memory format of the returned PhotonLib. Default: `None`.
+
+        Returns
+        -------
+        plib: PhotonLib`
+            If `device=None` or ``self`` already on same device, returns
+            ``self``. Otherwise, return a new instance of PhotonLib on the
+            desired device.
+        '''
+
+        if device is None or self.device == torch.device(device):
+            return self
+
+        return PhotonLib(self.meta, self.vis.to(device), self.eff.to(device))
 
     def visibility(self, x):
         '''
@@ -82,7 +106,6 @@ class PhotonLib:
         '''
 
         return self.vis[self.meta.coord_to_voxel(x)]
-
 
     #@staticmethod
     #def load_pmt_loc(fpath):
@@ -107,7 +130,7 @@ class PhotonLib:
         return self.view(self.vis)
 
     def __repr__(self):
-        return f'{self.__class__} [:memory:]'
+        return f'{self.__class__} ({self.device})'
     
     def __len__(self):
         return len(self.vis)
