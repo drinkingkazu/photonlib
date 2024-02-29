@@ -40,7 +40,7 @@ class PhotonLib:
         elif isinstance(cfg_or_fname,str):
             filepath=cfg_or_fname
         else:
-            raise ValueError(f'The argument of load function must be str or dict (received{cfg_or_fname} {type(filepath)})')
+            raise ValueError(f'The argument of load function must be str or dict (received {cfg_or_fname} {type(cfg_or_fname)})')
 
         meta = VoxelMeta.load(filepath)
         
@@ -81,9 +81,7 @@ class PhotonLib:
             An instance holding the visibilities in linear scale for the position(s) x.
         '''
 
-        vox_ids = self.meta.coord_to_voxel(x)
-
-        return self._vis[vox_ids]
+        return self.vis[self.meta.coord_to_voxel(x)]
 
 
     #@staticmethod
@@ -122,11 +120,37 @@ class PhotonLib:
         return self.vis[vox_id]
 
     def __call__(self, coords):
-        vox = self.meta.coord_to_voxel(coords)
-        vis = self[vox]
-        return vis * self.eff
+        return self.visibility(coords) * self.eff
 
+    @staticmethod
+    def save(outpath, vis, meta, eff=None):
+
+        if isinstance(vis, torch.Tensor):
+            vis = vis.cpu().detach().numpy()
+        else:
+            vis = np.asarray(vis)
+
+        if vis.ndim == 4:
+            vis = np.swapaxes(vis, 0, 2).reshape(len(meta), -1)
+
+        # TODO check dim(vis) and dim(meta)
+
+        print('[PhotonLib] saving to', outpath)
+        with h5py.File(outpath, 'w') as f:
+            f.create_dataset('numvox', data=meta.shape.cpu().detach().numpy())
+            f.create_dataset('min', data=meta.ranges[:,0].cpu().detach().numpy())
+            f.create_dataset('max', data=meta.ranges[:,1].cpu().detach().numpy())
+            f.create_dataset('vis', data=vis, compression='gzip')
+
+            if eff is not None:
+                f.create_dataset('eff', data=eff)
+
+        print('[PhotonLib] file saved')
+
+"""
     def _gradient_on_fly(self, voxel_id):
+        if torch.as_tensor(voxel_id).dim() != 0:
+            raise ValueError('voxel_id must be a scalar')
 
         idx = self.meta.voxel_to_idx(voxel_id)
 
@@ -141,7 +165,7 @@ class PhotonLib:
 
         data = self.vis_view[selected]
         grad = torch.column_stack([
-            [sobel(data[...,pmt], i)[center] for i in range(3)]
+            torch.as_tensor([sobel(data[...,pmt], i)[center] for i in range(3)])
             for pmt in range(self.n_pmts)
         ])
 
@@ -150,13 +174,13 @@ class PhotonLib:
     def gradient_on_fly(self, voxels):
         voxels = torch.as_tensor(voxels)
         if voxels.dim() == 0:
-            return torch.as_tensor([self._gradient_on_fly(voxel)])
-        elif voxels.dim() == 1:
-            return torch.as_tensor([self._gradient_on_fly(v) for v in voxels])
+            return self._gradient_on_fly(voxels)
+        elif voxels.dim() == 1: # !TODO (2023-11-06 sy) gpu -> cpu -> gpu is not efficient. fix
+            return torch.as_tensor([self._gradient_on_fly(v).cpu().numpy().tolist() for v in voxels])
 
     def gradient_from_cache(self, voxel_id):
         if self.grad_cache is None:
-            raise RunTimeError('grad_cache not loaded')
+            raise RuntimeError('grad_cache not loaded')
 
         return self.grad_cache[voxel_id]
 
@@ -174,10 +198,11 @@ class PhotonLib:
 
     def grad_view(self, d_axis):
         if self.grad_cache is None:
-            raise NotImplementedError('gradient_view requires caching')
+            raise RuntimeError('gradient_view requires caching')
 
         d_axis = self.meta.select_axis(d_axis)[0]
         return self.view(self.grad_cache[:,d_axis])
+"""
 
     @staticmethod
     def save(outpath, vis, meta, eff=None):
@@ -208,3 +233,4 @@ class PhotonLib:
                 f.create_dataset('eff', data=eff)
 
         print('[PhotonLib] file saved')
+
