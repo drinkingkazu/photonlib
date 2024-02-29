@@ -22,9 +22,7 @@ class AABox:
             The first point [0,:] is the minimum point of the bounding box.
             The second point [1,:] is the maximum point of the bounding box.
         '''
-        self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
-        self._lengths = torch.diff(self._ranges).flatten()
-    
+        self.update(ranges)    
 
     def __repr__(self):
         s = 'Meta'
@@ -45,7 +43,6 @@ class AABox:
     def z(self):
         return self._ranges[2]    
     
-
     @property
     def ranges(self):
         '''
@@ -60,6 +57,14 @@ class AABox:
         '''
         return self._lengths            
 
+    def update(self, ranges):
+        self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
+        self._lengths = torch.diff(self._ranges).flatten()
+
+    def update_axis(self, axis:int, min_value:float, max_value:float):
+        self._ranges[axis][0] = min_value
+        self._ranges[axis][1] = max_value
+        self._lengths[axis] = max_value - min_value
 
     def norm_coord(self, pos):
         '''
@@ -105,7 +110,7 @@ class AABox:
                 torch.as_tensor(f['min'],dtype=torch.float32),
                 torch.as_tensor(f['max'],dtype=torch.float32)
                 )
-            )
+            )            
         return cls(ranges)
 
 
@@ -137,6 +142,11 @@ class VoxelMeta(AABox):
         super().__init__(ranges)
         self._shape = torch.as_tensor(shape, dtype=torch.int64)
         self._voxel_size = torch.diff(self.ranges).flatten() / self.shape
+        self._gaps = [
+        [[],[]], # x
+        [[],[]], # y
+        [[],[]], # z
+        ]
        
     def __repr__(self):
         s = 'Meta'
@@ -149,6 +159,25 @@ class VoxelMeta(AABox):
     def __len__(self):
         return torch.prod(self.shape)
 
+    def insert_gap(self, axis:int, index:int, gap_size:float):
+        if not axis < self.ranges.shape[0]:
+            raise ValueError(f"Invalid axis index given: ({axis})")
+
+        if index < 1 or self.shape[axis] <= index:
+            raise ValueError(f"the index for the axis {axis} must be in [1,{self.shape[axis]-1}] (given {index})")
+
+        # register a gap
+        self._gaps[axis][0].append(index)
+        self._gaps[axis][1].append(gap_size)
+
+        # change the range
+        vrange = self.ranges[axis]
+        self.update_axis(axis,vrange[0],vrange[1]+gap_size)
+
+    @property
+    def gaps(self):
+        return self._gaps
+
     @property
     def shape(self):
         return self._shape
@@ -159,22 +188,26 @@ class VoxelMeta(AABox):
     
     @property
     def bins(self):
-        output = tuple(
-            torch.linspace(ranges[0], ranges[1], nbins)
-            for ranges, nbins in zip(self.ranges, self.shape+1)
-        )
 
+        output = []
+        for axis in range(len(self.ranges)):
+            data = torch.arange(self.shape[axis])*self._voxel_size[axis]
+            gaps = self.gaps[axis]
+            for gidx in range(len(gaps[0])):
+                loc = gaps[0][gidx]
+                gap = gaps[1][gidx]
+                data[loc:] += gap
+            output.append(data)
         return output
 
     @property
     def bin_centers(self):
-        centers = tuple((b[1:] + b[:-1]) / 2. for b in self.bins)
+        centers = tuple((b[:] + self._voxel_size[axis]/2. for axis,b in enumerate(self.bins)))
         return centers
     
     @property
     def norm_step_size(self):
         return 2. / self.shape
-
 
     def idx_to_voxel(self, idx):
         '''
@@ -192,14 +225,16 @@ class VoxelMeta(AABox):
         '''
 
         idx = torch.as_tensor(idx)
+        invalid = (idx[:,0] < 0) | (idx[:,1] < 0) | (idx[:,2] < 0)
 
         if len(idx.shape) == 1:
             idx = idx[None,:]
 
         nx, ny = self.shape[:2]
         vox = idx[:,0] + idx[:,1]*nx + idx[:,2]*nx*ny
-
-        return vox.squeeze()
+        vox = vox.squeeze()
+        vox[invalid] = -1
+        return vox
     
     def voxel_to_idx(self, voxel):
         '''
@@ -242,12 +277,21 @@ class VoxelMeta(AABox):
         torch.Tensor
             An array of corresponding positions in the absolute coordinate (at each voxel center)
         '''
-        idx = torch.as_tensor(idx)
+        idx = torch.as_tensor(idx) # (N,D)
 
         voxel_size = torch.as_tensor(self.voxel_size, device=idx.device)
         ranges = torch.as_tensor(self.ranges, device=idx.device)
         coord = (idx+0.5) * voxel_size
         coord += ranges[:, 0]
+
+        for axis in range(len(self.ranges)):
+            gaps = self.gaps[axis]
+            for gidx in range(len(gaps[0])):
+                loc = gaps[0][gidx]
+                gap = gaps[1][gidx]
+                mask = idx[:,axis] >= loc
+                coord[mask,axis] += gap
+
         return coord
 
 
@@ -283,13 +327,26 @@ class VoxelMeta(AABox):
             An array of corresponding voxels represented as index along xyz axis
         -------
         '''
-        # TODO(2021-10-29 kvt) validate coord_to_idx
-        # TODO(2021-10-29 kvt) check ranges
         coord = torch.as_tensor(coord)
+        shift = torch.zeros_like(coord)
+        ignore = torch.zeros_like(coord).bool()
+        for axis in range(len(self.ranges)):
+            gaps = self.gaps[axis]
+            for gidx in range(len(gaps[0])):
+                loc = gaps[0][gidx]
+                gap = gaps[1][gidx]
+                void1 = self.bins[axis][loc]
+                void0 = self.bins[axis][loc] - gap
+                # between void0 and voi1 should be marked nan
+                ignore = ignore or (void0 <= coord[...,axis] < void1)
+                # above void1 should be shifted by gap
+                mask = (void1 <= coord[...,axis])
+                shift[mask,axis] -= gap
+
 
         step = torch.as_tensor(self.voxel_size, device=coord.device)
         ranges = torch.as_tensor(self.ranges, device=coord.device)
-        idx = (coord - ranges[:,0]) / step
+        idx = (coord + shift - ranges[:,0]) / step
 
         idx = self.as_int64(idx)
         idx[idx<0] = 0
@@ -297,6 +354,9 @@ class VoxelMeta(AABox):
             n = self.shape[axis]
             mask = idx[...,axis] >= n
             idx[mask,axis] = n-1
+
+        invalid = self.as_int64(torch.as_tensor([-1,-1,-1]))
+        idx[ignore] = invalid
 
         return idx
 
@@ -350,7 +410,13 @@ class VoxelMeta(AABox):
                 torch.as_tensor(f['max'],dtype=torch.float32)
                 )
             )
-        return cls(shape, ranges)
+
+            meta = cls(shape, ranges)
+            if 'gaps' in f.keys():
+                for gap in f['gaps']:
+                    meta.insert_gap(axis=int(gap[0]),index=int(gap[1]),gap_size=float(gap[2]))
+
+        return meta
 
 
     def idx_at(self, axis : int | str, i : int):
@@ -474,5 +540,4 @@ class VoxelMeta(AABox):
         idx[idx>=n] = n-1
 
         return idx
-
 

@@ -198,6 +198,11 @@ class PhotonLib:
             f.create_dataset('min', data=meta.ranges[:,0].cpu().detach().numpy())
             f.create_dataset('max', data=meta.ranges[:,1].cpu().detach().numpy())
             f.create_dataset('vis', data=vis, compression='gzip')
+            gap_data=[]
+            for axis, gaps in enumerate(meta.gaps):
+                for gidx in range(len(gaps[0])):
+                    gap_data.append([axis,gaps[0][gidx],gaps[1][gidx]])
+            f.create_dataset('gaps', data=gap_data)
 
             if eff is not None:
                 f.create_dataset('eff', data=eff)
