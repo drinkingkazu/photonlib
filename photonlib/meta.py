@@ -197,20 +197,18 @@ class VoxelMeta(AABox):
 
         output = []
         for axis in range(len(self.ranges)):
-            data = torch.arange(self.shape[axis]+1)*self._voxel_size[axis]
+            data = torch.arange(self.shape[axis])*self._voxel_size[axis]
             gaps = self.gaps[axis]
             for gidx in range(len(gaps[0])):
                 loc = gaps[0][gidx]
                 gap = gaps[1][gidx]
                 data[loc:] += gap
-            data += self.ranges[axis,0]
             output.append(data)
-
         return output
 
     @property
     def bin_centers(self):
-        centers = tuple((b[:-1] + self._voxel_size[axis]/2. for axis,b in enumerate(self.bins)))
+        centers = tuple((b[:] + self._voxel_size[axis]/2. for axis,b in enumerate(self.bins)))
         return centers
     
     @property
@@ -224,7 +222,7 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        idx : 2D array-like object
+        idx : array-like (2D or 3D)
             An array of positions in terms of voxel index along xyz axis
 
         Returns
@@ -241,8 +239,8 @@ class VoxelMeta(AABox):
 
         nx, ny = self.shape[:2]
         vox = idx[:,0] + idx[:,1]*nx + idx[:,2]*nx*ny
-        vox[invalid] = -1
         vox = vox.squeeze()
+        vox[invalid] = -1
         return vox
     
     def voxel_to_idx(self, voxel):
@@ -251,8 +249,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        voxel : 1D array-like object
-            An array of voxel IDs
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
 
         Returns
         -------
@@ -278,7 +276,7 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        idx : 2D array-like object
+        idx : array-like (1D or 2D)
             An array of positions in terms of voxel index along xyz axis
 
         Returns
@@ -310,8 +308,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        voxel : 1D array-like object
-            An array of voxel ID(s)
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
 
         Returns
         -------
@@ -328,19 +326,14 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        coord : 2D array-like object
-            An array of position(s) in the absolute coordinate
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
 
         Returns
         torch.Tensor
             An array of corresponding voxels represented as index along xyz axis
         -------
         '''
-        #if len(coord.shape) == 1:
-        #    if type(coord) in [type(np.array([])), type(torch.Tensor())]:
-        #        coord=coord[None,:]
-        #    else:
-        #        coord = [coord]
         coord = torch.as_tensor(coord)
         shift = torch.zeros_like(coord)
         ignore = torch.zeros_like(coord).bool()
@@ -370,7 +363,6 @@ class VoxelMeta(AABox):
             idx[mask,axis] = n-1
 
         invalid = self.as_int64(torch.as_tensor([-1,-1,-1]))
-        ignore  = ignore.sum(axis=1).bool()
         idx[ignore] = invalid
 
         return idx
@@ -382,8 +374,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        coord : 2D array-like object
-            An array of position(s) in the absolute coordinate
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
 
         Returns
         torch.Tensor

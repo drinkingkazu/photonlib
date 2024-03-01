@@ -80,10 +80,9 @@ class PhotonLib:
         torch.Tensor
             An instance holding the visibilities in linear scale for the position(s) x.
         '''
-        if len(x.shape) == 1:
-            return self.vis[self.meta.coord_to_voxel(x[None,:])]
-        else:
-            return self.vis[self.meta.coord_to_voxel(x)]
+
+        return self.vis[self.meta.coord_to_voxel(x)]
+
 
     #@staticmethod
     #def load_pmt_loc(fpath):
@@ -148,6 +147,63 @@ class PhotonLib:
 
         print('[PhotonLib] file saved')
 
+"""
+    def _gradient_on_fly(self, voxel_id):
+        if torch.as_tensor(voxel_id).dim() != 0:
+            raise ValueError('voxel_id must be a scalar')
+
+        idx = self.meta.voxel_to_idx(voxel_id)
+
+        center = torch.ones_like(idx)
+        center[idx == 0] = 0
+        center = tuple(center)
+
+        high = idx + 2
+        low = idx - 1
+        low[low<0] = 0
+        selected = tuple(slice(l,h) for l,h in zip(low, high))
+
+        data = self.vis_view[selected]
+        grad = torch.column_stack([
+            torch.as_tensor([sobel(data[...,pmt], i)[center] for i in range(3)])
+            for pmt in range(self.n_pmts)
+        ])
+
+        return grad
+
+    def gradient_on_fly(self, voxels):
+        voxels = torch.as_tensor(voxels)
+        if voxels.dim() == 0:
+            return self._gradient_on_fly(voxels)
+        elif voxels.dim() == 1: # !TODO (2023-11-06 sy) gpu -> cpu -> gpu is not efficient. fix
+            return torch.as_tensor([self._gradient_on_fly(v).cpu().numpy().tolist() for v in voxels])
+
+    def gradient_from_cache(self, voxel_id):
+        if self.grad_cache is None:
+            raise RuntimeError('grad_cache not loaded')
+
+        return self.grad_cache[voxel_id]
+
+    def gradient(self, voxel_id):
+        if self.grad_cache is not None:
+            grad = self.gradient_from_cache(voxel_id)
+        else:
+            grad = self.gradient_on_fly(voxel_id)
+
+        # convert to dV/dx for comparison with torch.autograd.grad
+        # sobel = gaus [1,2,1] (x) gaus [1,2,1] (x) diff [1,0,-1]
+        # resacle with a factor of  4x4 (gauss) and 2 (finite diff.)
+        # grad /= self.meta.norm_step_size * 32
+        return grad
+
+    def grad_view(self, d_axis):
+        if self.grad_cache is None:
+            raise RuntimeError('gradient_view requires caching')
+
+        d_axis = self.meta.select_axis(d_axis)[0]
+        return self.view(self.grad_cache[:,d_axis])
+"""
+
     @staticmethod
     def save(outpath, vis, meta, eff=None):
 
@@ -177,8 +233,4 @@ class PhotonLib:
                 f.create_dataset('eff', data=eff)
 
         print('[PhotonLib] file saved')
-
-
-
-
 
