@@ -23,6 +23,8 @@ class AABox:
             The second point [:,1] is the maximum point of the bounding box.
         '''
         self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
+        if len(self._ranges.shape) != 2 or self._ranges.shape[1] != 2:
+            raise ValueError('ranges must be a 2D array with shape (2,N)')
         self._lengths = torch.diff(self._ranges).flatten()    
 
     def __repr__(self):
@@ -59,6 +61,41 @@ class AABox:
         '''
         return self._lengths
 
+    def merge(self, abox:AABox):
+        '''
+        Expand the range to cover the subject AABox instance
+
+        Parameters
+        ----------
+        abox : AABox
+            The subject axis-aligned rectangular box to be contained by this box
+        '''
+        self._ranges[0] = min(self.x[0],abox.x[0]), max(self.x[1],abox.x[1])
+        self._ranges[1] = min(self.y[0],abox.y[0]), max(self.y[1],abox.y[1])
+        self._ranges[2] = min(self.z[0],abox.z[0]), max(self.z[1],abox.z[1])
+        self._lengths = torch.diff(self._ranges).flatten()
+
+    def overlaps(self, abox:AABox):
+        '''
+        Check if two boxes overlap (adjacent is considered not overlapping)
+        
+        Parameters
+        ----------
+        abox : AABox
+            The comparison subject
+
+        Returns
+        -------
+        bool
+            True if this box overlaps with the subject.
+        '''
+
+        x = self.x[1] > abox.x[0] and self.x[0] < abox.x[1]
+        y = self.y[1] > abox.y[0] and self.y[0] < abox.y[1]
+        z = self.z[1] > abox.z[0] and self.z[0] < abox.z[1]
+
+        return x and y and z
+
     def norm_coord(self, pos):
         '''
         Transform the absolute position to the normalized (-1 to 1 along each axis) within the box
@@ -83,6 +120,33 @@ class AABox:
         norm_pos -= 1.
 
         return norm_pos
+
+
+    def contain(self, pos):
+        '''
+        Returns a boolean (array). True = the point is contained. Otherwise False.
+
+        Parameters
+        ----------
+        pos : (array-like)
+            a (or an array of) position(s) in the absolute coordinate
+
+        Returns
+        -------
+        bool or torch.Tensor
+            bool if pos is a single position. a boolean array if the input is an array of positions.
+        '''
+        pos = torch.as_tensor(pos)
+        squeeze = False
+        if len(pos.shape) == 1:
+            pos=pos[None,:]
+            squeeze = True
+
+        contained = torch.ones_like(pos[...,0]).bool()
+        for i in range(self.ranges.shape[0]):
+            contained = contained & (self.ranges[i,0] < pos[:,i]) & (pos[:,i] < self.ranges[i,1])
+
+        return contained if not squeeze else contained.squeeze()
 
 
     @classmethod
