@@ -104,10 +104,9 @@ class PhotonLib:
         torch.Tensor
             An instance holding the visibilities in linear scale for the position(s) x.
         '''
-        if len(x.shape) == 1:
-            return self.vis[self.meta.coord_to_voxel(x[None,:])]
-        else:
-            return self.vis[self.meta.coord_to_voxel(x)]
+
+        return self.vis[self.meta.coord_to_voxel(x)]
+
 
     #@staticmethod
     #def load_pmt_loc(fpath):
@@ -171,38 +170,4 @@ class PhotonLib:
                 f.create_dataset('eff', data=eff)
 
         print('[PhotonLib] file saved')
-
-    @staticmethod
-    def save(outpath, vis, meta, eff=None):
-
-        if isinstance(vis, torch.Tensor):
-            vis = vis.cpu().detach().numpy()
-        else:
-            vis = np.asarray(vis)
-
-        if vis.ndim == 4:
-            vis = np.swapaxes(vis, 0, 2).reshape(len(meta), -1)
-
-        # TODO check dim(vis) and dim(meta)
-
-        print('[PhotonLib] saving to', outpath)
-        with h5py.File(outpath, 'w') as f:
-            f.create_dataset('numvox', data=meta.shape.cpu().detach().numpy())
-            f.create_dataset('min', data=meta.ranges[:,0].cpu().detach().numpy())
-            f.create_dataset('max', data=meta.ranges[:,1].cpu().detach().numpy())
-            f.create_dataset('vis', data=vis, compression='gzip')
-            gap_data=[]
-            for axis, gaps in enumerate(meta.gaps):
-                for gidx in range(len(gaps[0])):
-                    gap_data.append([axis,gaps[0][gidx],gaps[1][gidx]])
-            f.create_dataset('gaps', data=gap_data)
-
-            if eff is not None:
-                f.create_dataset('eff', data=eff)
-
-        print('[PhotonLib] file saved')
-
-
-
-
 

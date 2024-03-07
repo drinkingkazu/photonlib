@@ -22,8 +22,10 @@ class AABox:
             The first point [:,0] is the minimum point of the bounding box.
             The second point [:,1] is the maximum point of the bounding box.
         '''
-        self.update(ranges)
-    
+        self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
+        if len(self._ranges.shape) != 2 or self._ranges.shape[1] != 2:
+            raise ValueError('ranges must be a 2D array with shape (2,N)')
+        self._lengths = torch.diff(self._ranges).flatten()    
 
     def __repr__(self):
         s = 'Meta'
@@ -44,6 +46,7 @@ class AABox:
     def z(self):
         return self._ranges[2]    
     
+
     @property
     def ranges(self):
         '''
@@ -56,18 +59,42 @@ class AABox:
         '''
         Access the lengths of the box along each axis
         '''
-        return self._lengths            
+        return self._lengths
 
-    def update(self, ranges):
-        self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
-        if len(self._ranges.shape) != 2 or self._ranges.shape[1] != 2:
-            raise ValueError('ranges must be a 2D array with shape (2,N)')
+    def merge(self, abox:AABox):
+        '''
+        Expand the range to cover the subject AABox instance
+
+        Parameters
+        ----------
+        abox : AABox
+            The subject axis-aligned rectangular box to be contained by this box
+        '''
+        self._ranges[0] = min(self.x[0],abox.x[0]), max(self.x[1],abox.x[1])
+        self._ranges[1] = min(self.y[0],abox.y[0]), max(self.y[1],abox.y[1])
+        self._ranges[2] = min(self.z[0],abox.z[0]), max(self.z[1],abox.z[1])
         self._lengths = torch.diff(self._ranges).flatten()
 
-    def update_axis(self, axis:int, min_value:float, max_value:float):
-        self._ranges[axis][0] = min_value
-        self._ranges[axis][1] = max_value
-        self._lengths[axis] = max_value - min_value
+    def overlaps(self, abox:AABox):
+        '''
+        Check if two boxes overlap (adjacent is considered not overlapping)
+        
+        Parameters
+        ----------
+        abox : AABox
+            The comparison subject
+
+        Returns
+        -------
+        bool
+            True if this box overlaps with the subject.
+        '''
+
+        x = self.x[1] > abox.x[0] and self.x[0] < abox.x[1]
+        y = self.y[1] > abox.y[0] and self.y[0] < abox.y[1]
+        z = self.z[1] > abox.z[0] and self.z[0] < abox.z[1]
+
+        return x and y and z
 
     def norm_coord(self, pos):
         '''
@@ -95,6 +122,33 @@ class AABox:
         return norm_pos
 
 
+    def contain(self, pos):
+        '''
+        Returns a boolean (array). True = the point is contained. Otherwise False.
+
+        Parameters
+        ----------
+        pos : (array-like)
+            a (or an array of) position(s) in the absolute coordinate
+
+        Returns
+        -------
+        bool or torch.Tensor
+            bool if pos is a single position. a boolean array if the input is an array of positions.
+        '''
+        pos = torch.as_tensor(pos)
+        squeeze = False
+        if len(pos.shape) == 1:
+            pos=pos[None,:]
+            squeeze = True
+
+        contained = torch.ones_like(pos[...,0]).bool()
+        for i in range(self.ranges.shape[0]):
+            contained = contained & (self.ranges[i,0] < pos[:,i]) & (pos[:,i] < self.ranges[i,1])
+
+        return contained if not squeeze else contained.squeeze()
+
+
     @classmethod
     def load(cls, cfg_or_fname):
         '''
@@ -113,7 +167,7 @@ class AABox:
                 torch.as_tensor(f['min'],dtype=torch.float32),
                 torch.as_tensor(f['max'],dtype=torch.float32)
                 )
-            )            
+            )
         return cls(ranges)
 
 
@@ -148,11 +202,6 @@ class VoxelMeta(AABox):
         if self._shape.shape != (self.ranges.shape[0],):
             raise ValueError('shape must be a 1D array with length equal to number of axes')
         self._voxel_size = torch.diff(self.ranges).flatten() / self.shape
-        self._gaps = [
-        [[],[]], # x
-        [[],[]], # y
-        [[],[]], # z
-        ]
        
     def __repr__(self):
         s = 'Meta'
@@ -165,25 +214,6 @@ class VoxelMeta(AABox):
     def __len__(self):
         return torch.prod(self.shape)
 
-    def insert_gap(self, axis:int, index:int, gap_size:float):
-        if not axis < self.ranges.shape[0]:
-            raise ValueError(f"Invalid axis index given: ({axis})")
-
-        if index < 1 or self.shape[axis] <= index:
-            raise ValueError(f"the index for the axis {axis} must be in [1,{self.shape[axis]-1}] (given {index})")
-
-        # register a gap
-        self._gaps[axis][0].append(index)
-        self._gaps[axis][1].append(gap_size)
-
-        # change the range
-        vrange = self.ranges[axis]
-        self.update_axis(axis,vrange[0],vrange[1]+gap_size)
-
-    @property
-    def gaps(self):
-        return self._gaps
-
     @property
     def shape(self):
         return self._shape
@@ -194,23 +224,16 @@ class VoxelMeta(AABox):
     
     @property
     def bins(self):
-
-        output = []
-        for axis in range(len(self.ranges)):
-            data = torch.arange(self.shape[axis]+1)*self._voxel_size[axis]
-            gaps = self.gaps[axis]
-            for gidx in range(len(gaps[0])):
-                loc = gaps[0][gidx]
-                gap = gaps[1][gidx]
-                data[loc:] += gap
-            data += self.ranges[axis,0]
-            output.append(data)
+        output = tuple(
+            torch.linspace(ranges[0], ranges[1], nbins)
+            for ranges, nbins in zip(self.ranges, self.shape+1)
+        )
 
         return output
 
     @property
     def bin_centers(self):
-        centers = tuple((b[:-1] + self._voxel_size[axis]/2. for axis,b in enumerate(self.bins)))
+        centers = tuple((b[1:] + b[:-1]) / 2. for b in self.bins)
         return centers
     
     @property
@@ -218,13 +241,14 @@ class VoxelMeta(AABox):
         # !TODO: (2023-11-05 sy) what is this?
         return 2. / self.shape
 
+
     def idx_to_voxel(self, idx):
         '''
         Converts from the index coordinate (N) to the voxel ID (1)
 
         Parameters
         ----------
-        idx : 2D array-like object
+        idx : array-like (2D or 3D)
             An array of positions in terms of voxel index along xyz axis
 
         Returns
@@ -234,16 +258,14 @@ class VoxelMeta(AABox):
         '''
 
         idx = torch.as_tensor(idx)
-        invalid = (idx[:,0] < 0) | (idx[:,1] < 0) | (idx[:,2] < 0)
 
         if len(idx.shape) == 1:
             idx = idx[None,:]
 
         nx, ny = self.shape[:2]
         vox = idx[:,0] + idx[:,1]*nx + idx[:,2]*nx*ny
-        vox[invalid] = -1
-        vox = vox.squeeze()
-        return vox
+
+        return vox.squeeze()
     
     def voxel_to_idx(self, voxel):
         '''
@@ -251,8 +273,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        voxel : 1D array-like object
-            An array of voxel IDs
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
 
         Returns
         -------
@@ -278,7 +300,7 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        idx : 2D array-like object
+        idx : array-like (1D or 2D)
             An array of positions in terms of voxel index along xyz axis
 
         Returns
@@ -286,21 +308,12 @@ class VoxelMeta(AABox):
         torch.Tensor
             An array of corresponding positions in the absolute coordinate (at each voxel center)
         '''
-        idx = torch.as_tensor(idx) # (N,D)
+        idx = torch.as_tensor(idx)
 
         voxel_size = torch.as_tensor(self.voxel_size, device=idx.device)
         ranges = torch.as_tensor(self.ranges, device=idx.device)
         coord = (idx+0.5) * voxel_size
         coord += ranges[:, 0]
-
-        for axis in range(len(self.ranges)):
-            gaps = self.gaps[axis]
-            for gidx in range(len(gaps[0])):
-                loc = gaps[0][gidx]
-                gap = gaps[1][gidx]
-                mask = idx[:,axis] >= loc
-                coord[mask,axis] += gap
-
         return coord
 
 
@@ -310,8 +323,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        voxel : 1D array-like object
-            An array of voxel ID(s)
+        voxel : int or array-like (1D)
+            A voxel ID or a list of voxel IDs
 
         Returns
         -------
@@ -328,39 +341,21 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        coord : 2D array-like object
-            An array of position(s) in the absolute coordinate
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
 
         Returns
         torch.Tensor
             An array of corresponding voxels represented as index along xyz axis
         -------
         '''
-        #if len(coord.shape) == 1:
-        #    if type(coord) in [type(np.array([])), type(torch.Tensor())]:
-        #        coord=coord[None,:]
-        #    else:
-        #        coord = [coord]
+        # TODO(2021-10-29 kvt) validate coord_to_idx
+        # TODO(2021-10-29 kvt) check ranges
         coord = torch.as_tensor(coord)
-        shift = torch.zeros_like(coord)
-        ignore = torch.zeros_like(coord).bool()
-        for axis in range(len(self.ranges)):
-            gaps = self.gaps[axis]
-            for gidx in range(len(gaps[0])):
-                loc = gaps[0][gidx]
-                gap = gaps[1][gidx]
-                void1 = self.bins[axis][loc]
-                void0 = self.bins[axis][loc] - gap
-                # between void0 and voi1 should be marked nan
-                ignore = ignore or (void0 <= coord[...,axis] < void1)
-                # above void1 should be shifted by gap
-                mask = (void1 <= coord[...,axis])
-                shift[mask,axis] -= gap
-
 
         step = torch.as_tensor(self.voxel_size, device=coord.device)
         ranges = torch.as_tensor(self.ranges, device=coord.device)
-        idx = (coord + shift - ranges[:,0]) / step
+        idx = (coord - ranges[:,0]) / step
 
         idx = self.as_int64(idx)
         idx[idx<0] = 0
@@ -368,10 +363,6 @@ class VoxelMeta(AABox):
             n = self.shape[axis]
             mask = idx[...,axis] >= n
             idx[mask,axis] = n-1
-
-        invalid = self.as_int64(torch.as_tensor([-1,-1,-1]))
-        ignore  = ignore.sum(axis=1).bool()
-        idx[ignore] = invalid
 
         return idx
 
@@ -382,8 +373,8 @@ class VoxelMeta(AABox):
 
         Parameters
         ----------
-        coord : 2D array-like object
-            An array of position(s) in the absolute coordinate
+        coord : array-like (1D or 2D)
+            A (or an array of) position(s) in the absolute coordinate
 
         Returns
         torch.Tensor
@@ -425,13 +416,7 @@ class VoxelMeta(AABox):
                 torch.as_tensor(f['max'],dtype=torch.float32)
                 )
             )
-
-            meta = cls(shape, ranges)
-            if 'gaps' in f.keys():
-                for gap in f['gaps']:
-                    meta.insert_gap(axis=int(gap[0]),index=int(gap[1]),gap_size=float(gap[2]))
-
-        return meta
+        return cls(shape, ranges)
 
 
     def idx_at(self, axis : int | str, i : int):
@@ -556,4 +541,5 @@ class VoxelMeta(AABox):
         idx[idx>=n] = n-1
 
         return idx
+
 
