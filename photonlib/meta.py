@@ -22,9 +22,10 @@ class AABox:
             The first point [:,0] is the minimum point of the bounding box.
             The second point [:,1] is the maximum point of the bounding box.
         '''
-        self._ranges = torch.as_tensor(ranges, dtype=torch.float32)
-        if len(self._ranges.shape) != 2 or self._ranges.shape[1] != 2:
+        ranges = torch.as_tensor(ranges, dtype=torch.float32)
+        if len(ranges.shape) != 2 or ranges.shape[1] != 2:
             raise ValueError('ranges must be a 2D array with shape (2,N)')
+        self._ranges  = ranges
         self._lengths = torch.diff(self._ranges).flatten()    
 
     def __repr__(self):
@@ -61,6 +62,11 @@ class AABox:
         '''
         return self._lengths
 
+    def update(self, ranges:torch.Tensor):
+        assert self.ranges.shape == ranges.shape, f"Cannot update VoxelMeta ranges by changing dimensions!"
+        self._ranges[:]  = ranges[:]
+        self._lengths[:] = (torch.diff(self._ranges).flatten())[:]
+
     def merge(self, abox:AABox):
         '''
         Expand the range to cover the subject AABox instance
@@ -70,10 +76,10 @@ class AABox:
         abox : AABox
             The subject axis-aligned rectangular box to be contained by this box
         '''
-        self._ranges[0] = min(self.x[0],abox.x[0]), max(self.x[1],abox.x[1])
-        self._ranges[1] = min(self.y[0],abox.y[0]), max(self.y[1],abox.y[1])
-        self._ranges[2] = min(self.z[0],abox.z[0]), max(self.z[1],abox.z[1])
-        self._lengths = torch.diff(self._ranges).flatten()
+        for dim in range(len(self._ranges)):
+            self._ranges[dim][0] = min(self.ranges[dim][0],abox.ranges[dim][0])
+            self._ranges[dim][1] = max(self.ranges[dim][1],abox.ranges[dim][1])
+        self._lengths[:] = (torch.diff(self._ranges).flatten())[:]
 
     def overlaps(self, abox:AABox):
         '''
