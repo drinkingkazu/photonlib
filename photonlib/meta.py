@@ -220,6 +220,10 @@ class VoxelMeta(AABox):
     def __len__(self):
         return torch.prod(self.shape)
 
+
+    def clone(self):
+        return VoxelMeta(self.shape.clone(),self.ranges.clone())
+
     @property
     def shape(self):
         return self._shape

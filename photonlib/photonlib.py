@@ -104,8 +104,31 @@ class PhotonLib:
         torch.Tensor
             An instance holding the visibilities in linear scale for the position(s) x.
         '''
+        pos = x
+        if len(x.shape) == 1:
+            pos = pos[None,:]
+        vis = torch.zeros(size=(pos.shape[0],self.n_pmts),dtype=torch.float32).to(self.device)
+        mask = self.meta.contain(pos)
+        vis[mask] = self.vis[self.meta.coord_to_voxel(pos[mask])]
 
-        return self.vis[self.meta.coord_to_voxel(x)]
+        return vis
+
+    def gradx(self, x):
+
+        pos = x
+        if len(x.shape) == 1:
+            pos = pos[None,:]
+
+        grad = torch.zeros(size=(pos.shape[0],self.n_pmts),dtype=torch.float32).to(self.device)
+
+        mask0   = self.meta.contain(pos)
+        vox_ids = self.meta.coord_to_voxel(pos[mask0]) + 1
+        mask1   = vox_ids >= (len(self.meta)-1)
+        vox_ids[mask1] = len(self.meta)-1
+
+        grad[mask0] = (self.vis[vox_ids] - self.vis[vox_ids-1])/self.meta.voxel_size[0]
+
+        return grad
 
 
     #@staticmethod
