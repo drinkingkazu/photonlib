@@ -20,6 +20,7 @@ setup(
         'scikit-build',
         'torch',
         'h5py',
+        'gdown',
     ],
     long_description=long_description,
     long_description_content_type='text/markdown',
