@@ -25,6 +25,36 @@ class MultiLib:
         self._n_pmts_v = []
         self._meta = None
 
+    def to(self, device=None):
+        '''
+        Perform device conversion on the PhotonLib.
+
+        Arguments
+        ---------
+        device: :class:`torch.memory_format`, optinal
+            The desired memory format of the returned PhotonLib. Default: `None`.
+
+        Returns
+        -------
+        plib: MultiLib`
+            If `device=None` or ``self`` already on same device, returns
+            ``self``. Otherwise, return a new instance of MultiLib on the
+            desired device.
+        '''
+
+        if device is None or self.device == torch.device(device):
+            return self
+
+        for i in range(len(self._vis_v)):
+            self._vis_v[i] = self._vis_v[i].to(device)
+
+        for i in range(len(self._data_id_v)):
+            data_id = self._data_id_v[i]
+            plib    = self._plib_v[i]
+            self._plib_v[i] = PhotonLib(plib.meta.clone(), self._vis_v[data_id])
+
+        return self
+
     def add_data(self, vis):
 
         self._vis_v.append(torch.as_tensor(vis,dtype=torch.float32))
@@ -53,6 +83,12 @@ class MultiLib:
             self._meta = AABox(meta.ranges.clone())
         else:
             self._meta.merge(meta)
+
+    @property
+    def device(self):
+        if len(self._vis_v)<1:
+            return 'cpu'
+        return self._vis_v[0].device    
 
     @property
     def meta(self):
