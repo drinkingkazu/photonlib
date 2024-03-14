@@ -19,8 +19,8 @@ class PhotonLib:
             Overall scaling factor for the visibility. Does not do anything if 1.0
         '''
         self._meta = meta
-        self._eff = torch.as_tensor(eff)
-        self._vis = torch.as_tensor(vis)
+        self._eff = torch.as_tensor(eff,dtype=torch.float32)
+        self._vis = torch.as_tensor(vis,dtype=torch.float32)
         self.grad_cache = None
     
     @classmethod
@@ -105,13 +105,15 @@ class PhotonLib:
             An instance holding the visibilities in linear scale for the position(s) x.
         '''
         pos = x
+        squeeze=False
         if len(x.shape) == 1:
             pos = pos[None,:]
+            squeeze=True
         vis = torch.zeros(size=(pos.shape[0],self.n_pmts),dtype=torch.float32).to(self.device)
         mask = self.meta.contain(pos)
         vis[mask] = self.vis[self.meta.coord_to_voxel(pos[mask])]
 
-        return vis
+        return vis if not squeeze else vis.squeeze()
 
     def gradx(self, x):
 
