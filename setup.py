@@ -13,7 +13,7 @@ setup(
     description='Photon transportation physics models',
     license='MIT',
     keywords='Interface software for photon libraries in LArTPC experiments',
-    scripts=['bin/download_icarus_plib.sh'],
+    scripts=['bin/download_icarus_plib.sh','bin/download_2x2_plib.sh'],
     packages=['photonlib'],
     install_requires=[
         'numpy',
