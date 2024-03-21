@@ -35,6 +35,16 @@ class AABox:
             s += f' {var}:({x0},{x1})'
         return s
 
+    def to(self,device):
+        self._ranges  = self._ranges.to(device)
+        self._lengths = self._lengths.to(device)
+        return self
+
+    @property
+    def device(self):
+        return self._ranges.device
+    
+
     @property
     def x(self):
         return self._ranges[0]
@@ -220,6 +230,9 @@ class VoxelMeta(AABox):
     def __len__(self):
         return torch.prod(self.shape)
 
+    def to(self,device):
+        self._shape = self._shape.to(device)
+        self._voxel_size = self._voxel_size.to(device)
 
     def clone(self):
         return VoxelMeta(self.shape.clone(),self.ranges.clone())
