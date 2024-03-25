@@ -169,20 +169,22 @@ class MultiLib:
         #x = torch.as_tensor(x,dtype=torch.float32)
         if len(x.shape) == 1:
             x = x[None,:]
+        device = x.device
+        x = x.to(self.device)
 
-        vis = torch.zeros(size=(len(x),self.n_pmts),dtype=torch.float32)
+        vis = torch.zeros(size=(len(x),self.n_pmts),dtype=torch.float32,device=self.device)
         for i,plib in enumerate(self.plib):
             mask = plib.meta.contain(x)
             if mask.sum() < 1: continue
             vis[mask,sum(self._n_pmts_v[:i]):sum(self._n_pmts_v[:i+1])] += plib.visibility(x[mask])
-        return vis
+        return vis.to(device)
 
 
     def gradx(self, x):
         if len(x.shape) == 1:
             x = x[None,:]
 
-        grad = torch.zeros(size=(len(x),self.n_pmts),dtype=torch.float32)
+        grad = torch.zeros(size=(len(x),self.n_pmts),dtype=torch.float32,device=self.device)
         for i in range(len(self._plib_v)):
             grad[:,sum(self._n_pmts_v[:i]):sum(self._n_pmts_v[:i+1])] += self.plib[self.data_id[i]].gradx(x)
         return grad
