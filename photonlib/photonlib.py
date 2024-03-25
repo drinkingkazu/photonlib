@@ -22,6 +22,9 @@ class PhotonLib:
         self._eff = torch.as_tensor(eff,dtype=torch.float32)
         self._vis = torch.as_tensor(vis,dtype=torch.float32)
         self.grad_cache = None
+
+    def contain(self, pts):
+        return self._meta.contain(pts)
     
     @classmethod
     def load(cls, cfg_or_fname:str):

@@ -25,6 +25,12 @@ class MultiLib:
         self._n_pmts_v = []
         self._meta = None
 
+    def contain(self,pts):
+        barray = torch.zeros(size=(len(pts),)).bool()
+        for plib in self._plib_v:
+            barray = barray | plib.meta.contain(pts)
+        return barray
+
     def to(self, device=None):
         '''
         Perform device conversion on the PhotonLib.
