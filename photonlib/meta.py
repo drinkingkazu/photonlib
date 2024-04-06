@@ -231,6 +231,7 @@ class VoxelMeta(AABox):
         return torch.prod(self.shape)
 
     def to(self,device):
+        super().to(device)
         self._shape = self._shape.to(device)
         self._voxel_size = self._voxel_size.to(device)
 
