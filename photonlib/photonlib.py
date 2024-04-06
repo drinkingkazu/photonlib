@@ -136,6 +136,50 @@ class PhotonLib:
         return grad
 
 
+    def visibility2(self, x):
+        '''
+        A function meant for analysis/inference (not for training) that returns
+        the visibilities for all PMTs given the position(s) in x. Note x is not 
+        a normalized coordinate.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            A (or an array of) 3D point in the absolute coordinate
+        
+        Returns
+        -------
+        torch.Tensor
+            An instance holding the visibilities in linear scale for the position(s) x.
+        '''
+        pos = x
+        squeeze=False
+        if len(x.shape) == 1:
+            pos = pos[None,:]
+            squeeze=True
+        #vis = torch.zeros(size=(pos.shape[0],self.n_pmts),dtype=torch.float32).to(self.device)
+        #mask = self.meta.contain(pos)
+        #vis[mask] = self.vis[self.meta.coord_to_voxel(pos[mask])]
+
+        return self._vis[self.meta.coord_to_voxel(pos)]
+
+
+    def gradx2(self, x):
+
+        pos = x
+        if len(x.shape) == 1:
+            pos = pos[None,:]
+
+        if not hasattr(self,'grad'):
+            self.grad = torch.zeros(size=(len(self),self.n_pmts),dtype=torch.float32,device=self.device)
+            self.grad[:-1,:] = self._vis[1:] - self._vis[:-1]
+            self.grad[-1,:]  = self.grad[-2,:]
+
+        vox_ids = self.meta.coord_to_voxel(pos) + 1
+        return self.grad[vox_ids]
+
+
+
     #@staticmethod
     #def load_pmt_loc(fpath):
     #    df = pd.read_csv(fpath)
